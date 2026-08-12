@@ -179,8 +179,12 @@ func restoreProfile(displayID: CGDirectDisplayID) {
     guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue() else {
         return
     }
-    let info: [CFString: Any] = [kColorSyncDeviceDefaultProfileID.takeUnretainedValue():
-                                 kColorSyncDeviceProfileURL.takeUnretainedValue()]
+    // kCFNull is what actually clears the override. Passing a URL — or, as an
+    // earlier version did, a key constant — just reassigns it, leaving the
+    // custom profile in place and "reset" doing nothing.
+    let info: [CFString: Any] = [
+        kColorSyncDeviceDefaultProfileID.takeUnretainedValue(): kCFNull
+    ]
     _ = ColorSyncDeviceSetCustomProfiles(
         kColorSyncDisplayDeviceClass.takeUnretainedValue(), uuid, info as CFDictionary)
 }
@@ -392,4 +396,31 @@ func makeSaturationProfileData(saturation: Double, base: BaseProfile) -> Data? {
         matrix: matrix
     ) else { return nil }
     return space.copyICCData() as Data?
+}
+
+// MARK: - The one apply path
+
+/// Applies a saturation factor to one display, shared by the CLI and the menu
+/// bar app so both behave identically. Returns the installed profile's name, or
+/// nil when the adjustment was removed rather than installed.
+@discardableResult
+func applySaturation(_ amount: Double, displayID: CGDirectDisplayID,
+                     displayName: String) throws -> String? {
+    // Exactly 1.0 means "no adjustment" — drop the override rather than leave
+    // an identity profile sitting over the display's real calibration.
+    guard abs(amount - 1.0) > 0.001 else {
+        restoreProfile(displayID: displayID)
+        return nil
+    }
+    // Prefer the panel's own characterization so we add saturation on top of
+    // its real primaries and tone curve instead of imposing sRGB assumptions.
+    let base = factoryBaseProfile(displayID: displayID)
+    let built = base.flatMap { makeSaturationProfileData(saturation: amount, base: $0) }
+        ?? makeSaturationProfileData(saturation: amount)
+    guard let raw = built else { throw SatError.profileBuildFailed }
+
+    let label = "\(displayName) — Saturation \(Int((amount * 100).rounded()))%"
+    let data = setProfileDescription(raw, to: label) ?? raw
+    _ = try installProfile(data, displayID: displayID, tag: "\(displayID)")
+    return label
 }

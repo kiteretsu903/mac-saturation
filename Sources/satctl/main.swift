@@ -59,35 +59,13 @@ case "set":
     }
     guard amount > 0 || amount == 0 else { usage() }
 
-    // 1.0 means "no adjustment" — drop the override entirely rather than
-    // installing an identity profile over the display's real calibration.
-    if amount == 1.0 {
-        restoreProfile(displayID: d.id)
-        print("display \(index) (\(d.name)): saturation reset to normal")
-        break
-    }
-    // Build on the panel's own factory characterization where we can, so the
-    // profile adds saturation without also redefining the display's primaries
-    // and tone curve. Falls back to sRGB assumptions if it can't be read.
-    let base = factoryBaseProfile(displayID: d.id)
-    if let b = base {
-        print("base: display factory profile (gamma \(String(format: "%.3f", b.gamma)))")
-    } else {
-        print("base: sRGB (could not read factory profile)")
-    }
-    let built = base.flatMap { makeSaturationProfileData(saturation: amount, base: $0) }
-        ?? makeSaturationProfileData(saturation: amount)
-    guard let raw = built else {
-        print("satctl: could not build a profile for saturation \(amount)")
-        exit(1)
-    }
-    // Give it a name that is identifiable in System Settings > Displays.
-    let label = "\(d.name) — Saturation \(Int((amount * 100).rounded()))%"
-    let data = setProfileDescription(raw, to: label) ?? raw
     do {
-        _ = try installProfile(data, displayID: d.id, tag: "\(d.id)")
-        print("display \(index) (\(d.name)): saturation \(amount)")
-        print("profile name: \(label)")
+        if let label = try applySaturation(amount, displayID: d.id, displayName: d.name) {
+            print("display \(index) (\(d.name)): saturation \(amount)")
+            print("profile name: \(label)")
+        } else {
+            print("display \(index) (\(d.name)): saturation reset to normal")
+        }
     } catch {
         print("satctl: failed to apply profile: \(error)")
         exit(1)

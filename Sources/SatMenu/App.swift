@@ -57,24 +57,8 @@ final class SaturationModel: ObservableObject {
         defaults.set(amount, forKey: key(for: entry.id))
         lastError = nil
 
-        // Exactly 1.0 means "no adjustment" — drop the override rather than
-        // leaving an identity profile over the display's real calibration.
-        guard abs(amount - 1.0) > 0.001 else {
-            restoreProfile(displayID: entry.id)
-            return
-        }
-
-        let base = factoryBaseProfile(displayID: entry.id)
-        let built = base.flatMap { makeSaturationProfileData(saturation: amount, base: $0) }
-            ?? makeSaturationProfileData(saturation: amount)
-        guard let raw = built else {
-            lastError = "Could not build a profile for \(entry.name)."
-            return
-        }
-        let label = "\(entry.name) — Saturation \(Int((amount * 100).rounded()))%"
-        let data = setProfileDescription(raw, to: label) ?? raw
         do {
-            _ = try installProfile(data, displayID: entry.id, tag: "\(entry.id)")
+            try applySaturation(amount, displayID: entry.id, displayName: entry.name)
         } catch {
             lastError = "Could not apply to \(entry.name)."
         }
@@ -91,20 +75,9 @@ final class SaturationModel: ObservableObject {
 
 struct DisplayRow: View {
     @ObservedObject var model: SaturationModel
-    let entry: DisplayEntry
-
-    private var binding: Binding<Double> {
-        Binding(
-            get: { entry.saturation },
-            // Applying on every drag frame would reinstall the profile
-            // continuously, so the slider only commits when the drag ends.
-            set: { value in
-                if let i = model.displays.firstIndex(where: { $0.id == entry.id }) {
-                    model.displays[i].saturation = value
-                }
-            }
-        )
-    }
+    // A binding, not a copy: a captured struct would keep reporting its
+    // creation-time value during a drag, so the slider would snap back.
+    @Binding var entry: DisplayEntry
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -123,8 +96,10 @@ struct DisplayRow: View {
 
             HStack(spacing: 8) {
                 Slider(
-                    value: binding,
+                    value: $entry.saturation,
                     in: 0.0...3.0,
+                    // Applying on every drag frame would reinstall the display
+                    // profile continuously, so commit only when the drag ends.
                     onEditingChanged: { editing in
                         if !editing { model.apply(entry.saturation, to: entry) }
                     }
@@ -153,8 +128,8 @@ struct ContentView: View {
             if model.displays.isEmpty {
                 Text("No displays found.").foregroundStyle(.secondary)
             } else {
-                ForEach(model.displays) { entry in
-                    DisplayRow(model: model, entry: entry)
+                ForEach($model.displays) { $entry in
+                    DisplayRow(model: model, entry: $entry)
                 }
             }
 
