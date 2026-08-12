@@ -81,27 +81,48 @@ display untouched. Mechanism confirmed identical to BetterDisplay's (above).
 - No private APIs, no Accessibility or Screen Recording permission, no SIP changes.
 - Persists across logout like any display calibration, so there is no daemon.
 
-## This is what BetterDisplay does
+## How this differs from BetterDisplay
 
-Confirmed by symbol inspection of BetterDisplay 4.3.6 — it imports the same
-call and the same four keys this tool uses:
+**BetterDisplay does not use this mechanism.** An earlier version of this README
+claimed it did, inferred from the fact that its binary imports
+`ColorSyncDeviceSetCustomProfiles` and `CGSetDisplayTransferByTable`. That
+inference was wrong: it imports those for its *gamma/gain* controls, not for
+saturation.
+
+Measured directly, with BetterDisplay's saturation set to 130% and active on the
+display: the assigned ICC profile was still the stock one and the gamma table
+was still identity — byte-for-byte identical to the untouched baseline. It
+changes neither.
+
+What it actually does, from its linked frameworks and its on-screen windows:
 
 ```
-_ColorSyncDeviceSetCustomProfiles
-_kColorSyncDeviceDefaultProfileID
-_kColorSyncDeviceProfileURL
-_kColorSyncDisplayDeviceClass
-_CGSetDisplayTransferByTable        (its gamma / gain controls)
-_CGDisplayRestoreColorSyncSettings  (its reset path)
+_OBJC_CLASS_$_SCStream, _SCContentFilter      ScreenCaptureKit
+_OBJC_CLASS_$_CIContext, kCIContextWorkingColorSpace   CoreImage
+_MTLCreateSystemDefaultDevice, _CVPixelBufferGetIOSurface   Metal
 ```
 
-Its compositor-filter route is **absent from the binary**: no
-`CGSAddWindowFilter`, `CGSNewCIFilterByName`, `CGSSetCIFilterValues` or
-`CGSSetWindowFiltering`. The only `kCAFilter*` symbols it links are `Linear`
-and `Nearest`, which are content *scaling* filters, not colour ones.
+plus a window literally named
+`BetterDisplay Compositor Filter Overlay for Display 3`, sized exactly to the
+display. It **captures the display, applies a CoreImage filter on the GPU, and
+draws the filtered frames into a fullscreen overlay**. Despite the name, it does
+not filter the compositor — it re-renders the screen on top of itself.
 
-Despite the "compositor filter layer" name in its UI, it does not filter the
-compositor — it replaces the display's ICC profile.
+### Practical consequences
+
+| | satctl (ICC profile) | BetterDisplay (capture + filter) |
+|---|---|---|
+| Screen Recording permission | not needed | **required** |
+| Running process | none | continuous capture + GPU work |
+| Power cost | zero | ongoing |
+| Luminance | preserved by construction | not preserved — looks brighter |
+| Out-of-gamut colours | clip at the gamut edge | filtered before display mapping |
+
+The last two rows are why BetterDisplay looks more vivid at the same nominal
+percentage. `satctl` rotates colour around the Rec.709 luma axis, so brightness
+is mathematically unchanged; BetterDisplay's filter runs earlier in the pipeline
+and does not hold luminance fixed. They are not comparable on a common scale —
+BetterDisplay at 130% is a stronger effect than `satctl` at 150%.
 
 ## What does NOT work on modern macOS
 
