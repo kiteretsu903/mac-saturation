@@ -46,6 +46,14 @@ func display(at index: Int) -> Display? {
     activeDisplays().first { $0.index == index }
 }
 
+/// Renders a percentage without a trailing ".0" so profile names read as
+/// "Saturation 130%" rather than "Saturation 130.0%".
+func formatted(_ value: Double) -> String {
+    value == value.rounded()
+        ? String(Int(value.rounded()))
+        : String(format: "%g", value)
+}
+
 func usage() -> Never {
     print("""
     satctl — per-display software saturation
@@ -55,11 +63,15 @@ func usage() -> Never {
       satctl reset <index>           restore the display's normal profile
       satctl reset all               restore every display
 
+      satctl make <percent> [path]   write a saturation .icc file (100-180)
+
     <amount>  1.0 = unchanged, 0.0 = grayscale, >1.0 = oversaturated.
 
     Example:
       satctl set 2 0.70
       satctl set 2 1.00
+      satctl make 130
+      satctl make 145 ~/Desktop/vivid.icc
     """)
     exit(1)
 }
@@ -104,6 +116,35 @@ case "set":
         print("profile name: \(label)")
     } catch {
         print("satctl: failed to apply profile: \(error)")
+        exit(1)
+    }
+
+case "make":
+    // Writes a standalone .icc without touching any display, so a profile can
+    // be generated on one Mac and installed by hand on another.
+    guard args.count == 2 || args.count == 3, let percent = Double(args[1]) else {
+        usage()
+    }
+    guard percent >= 100, percent <= 180 else {
+        print("satctl: percent must be between 100 and 180 (got \(formatted(percent)))")
+        exit(1)
+    }
+    let label = "Saturation \(formatted(percent))%"
+    guard let raw = makeSaturationProfileData(saturation: percent / 100.0),
+          let data = setProfileDescription(raw, to: label) else {
+        print("satctl: could not build a profile for \(formatted(percent))%")
+        exit(1)
+    }
+    let out = args.count == 3
+        ? URL(fileURLWithPath: (args[2] as NSString).expandingTildeInPath)
+        : URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Saturation-\(formatted(percent)).icc")
+    do {
+        try data.write(to: out)
+        print("wrote \(out.path)")
+        print("profile name: \(label)")
+    } catch {
+        print("satctl: could not write \(out.path): \(error.localizedDescription)")
         exit(1)
     }
 

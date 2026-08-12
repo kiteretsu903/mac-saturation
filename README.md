@@ -8,7 +8,15 @@ satctl list
 satctl set 2 0.70      # 1.0 = unchanged, 0.0 = grayscale, >1.0 = oversaturated
 satctl reset 2
 satctl reset all
+
+satctl make 130                    # write Saturation-130.icc (100-180)
+satctl make 145 ~/Desktop/vivid.icc
 ```
+
+`make` generates a standalone `.icc` without touching any display, so you can
+build a profile on one Mac and install it by hand on another (System Settings >
+Displays > Colour Profile). A ready-made 130% profile is in
+[`profiles/`](profiles/).
 
 Build:
 
@@ -122,3 +130,8 @@ than merely being invisible to capture.
   custom calibration on the same display.
 - `s = 0.0` is clamped to `0.001`, since the saturation matrix is singular at
   exactly zero.
+- Oversaturation has no effect on colours already at the edge of sRGB: pure red,
+  green, blue and cyan are already maximally saturated, so boosting pushes them
+  out of gamut and they clip back to the same corner. The visible effect is on
+  photographic and mid-range colours. Verified: at 130% a sky blue moves from
+  spread 0.398 to 0.519, while pure primaries are unchanged.
