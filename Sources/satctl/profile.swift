@@ -9,8 +9,11 @@
 //
 // The trick: if we tell the system the display's primaries are MORE saturated
 // than they physically are, the compositor compensates by sending less
-// saturated signals — the picture desaturates. Widening the primaries by 1/s
-// yields a saturation factor of s. Narrowing them oversaturates.
+// saturated signals — the picture desaturates. Narrowing them oversaturates.
+//
+// The primaries are bent starting from the display's own factory profile
+// (see factoryBaseProfile), not from sRGB, so the panel's measured tone curve
+// and white point survive untouched.
 
 import Foundation
 import CoreGraphics

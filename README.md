@@ -13,7 +13,8 @@ satctl set 2 0.70      # 1.0 = unchanged, 0.0 = grayscale, >1.0 = oversaturated
 satctl reset 2
 satctl reset all
 
-satctl make 130                    # write Saturation-130.icc (100-180)
+satctl make 130                    # write Saturation-130.icc (100-400)
+satctl make 150 out.icc --display 1   # derive from that display's panel
 satctl make 145 ~/Desktop/vivid.icc
 ```
 
@@ -58,10 +59,17 @@ a saturation transform requires — and exactly what a 1D gamma LUT
 So instead of filtering pixels, `satctl` synthesizes a display profile that
 makes the system's own colour conversion perform the saturation:
 
-- The compositor computes `displayRGB = M⁻¹ · XYZ`, and content arrives as
-  `XYZ = M_sRGB · srcRGB`.
-- We want `displayRGB = S · srcRGB` for saturation matrix `S`.
-- Therefore the profile matrix must be `M = M_sRGB · S⁻¹`.
+- The compositor computes `displayRGB = M⁻¹ · XYZ` using the display's profile
+  matrix `M`.
+- We want an extra saturation `S` applied on top of the panel's real behaviour.
+- Therefore the profile matrix must be `M_new = M_display · S⁻¹`, where
+  `M_display` comes from the display's **factory** profile.
+
+Deriving from the factory profile rather than assuming sRGB matters. The Bigme's
+measured tone curve is gamma **1.961**; earlier versions of this tool hardcoded
+2.2, which shifted every midtone as an unintended side effect of adding
+saturation. `make` without `--display` still falls back to sRGB assumptions,
+since it has no panel to read.
 
 `S` is the standard luminance-preserving saturation matrix
 `S = s·I + (1−s)·1·wᵀ` with Rec.709 weights `w`. Its inverse has a closed form
@@ -83,7 +91,7 @@ weights to within ICC quantization), with channel spread ≤ 0.002. Neutrals sta
 exactly neutral at every setting.
 
 Visually confirmed on macOS 27.0 (arm64): external display grayscale, built-in
-display untouched. Mechanism confirmed identical to BetterDisplay's (above).
+display untouched.
 
 - Covers the whole desktop: apps, video, fullscreen, Mission Control, all Spaces.
 - Scoped to one physical display; others are unaffected.
@@ -124,14 +132,22 @@ not filter the compositor — it re-renders the screen on top of itself.
 | Screen Recording permission | not needed | **required** |
 | Running process | none | continuous capture + GPU work |
 | Power cost | zero | ongoing |
-| Luminance | preserved by construction | not preserved — looks brighter |
-| Out-of-gamut colours | clip at the gamut edge | filtered before display mapping |
+| HDR / wide-gamut content | mapped through the profile | filtered before display mapping |
 
-The last two rows are why BetterDisplay looks more vivid at the same nominal
-percentage. `satctl` rotates colour around the Rec.709 luma axis, so brightness
-is mathematically unchanged; BetterDisplay's filter runs earlier in the pipeline
-and does not hold luminance fixed. They are not comparable on a common scale —
-BetterDisplay at 130% is a stronger effect than `satctl` at 150%.
+**The colour maths is not the difference.** Rendering the same colours through
+CoreImage's `CIColorControls` saturation and through this tool's generated
+profile gives near-identical results — differences around 0.01, and luminance
+changes under 0.012, tracking closely even at 200% and 300%. An earlier version
+of this README claimed luminance preservation and gamut clipping explained the
+gap; measurement showed that was wrong.
+
+The two real differences are:
+
+- **Tone curve.** Getting the panel's actual gamma right (1.961 here, not 2.2)
+  mattered more than the saturation maths.
+- **Slider scale.** BetterDisplay's "130%" is not CoreImage saturation 1.3 — its
+  percentage sits on a different scale, so matching it by eye needs a larger
+  number here. That is why `make` allows up to 400%.
 
 ## What does NOT work on modern macOS
 
@@ -168,8 +184,10 @@ than merely being invisible to capture.
 
 ## Limitations
 
-- Assumes sRGB-like source content. Wide-gamut (P3) and HDR content is mapped
-  through the same profile, so extreme settings can clip in-gamut colours.
+- Wide-gamut (P3) and HDR content is mapped through the same profile, so extreme
+  settings can clip in-gamut colours.
+- `make` without `--display` assumes sRGB primaries and gamma 2.2. Prefer `set`
+  or `make --display` so the panel's real characterization is used.
 - Replaces the display's calibration profile, so it is not compatible with a
   custom calibration on the same display.
 - `s = 0.0` is clamped to `0.001`, since the saturation matrix is singular at
@@ -177,5 +195,5 @@ than merely being invisible to capture.
 - Oversaturation has no effect on colours already at the edge of sRGB: pure red,
   green, blue and cyan are already maximally saturated, so boosting pushes them
   out of gamut and they clip back to the same corner. The visible effect is on
-  photographic and mid-range colours. Verified: at 130% a sky blue moves from
-  spread 0.398 to 0.519, while pure primaries are unchanged.
+  photographic and mid-range colours. Verified on the Bigme: at 130% a sky blue
+  moves from spread 0.398 to 0.550, while pure primaries are unchanged.

@@ -1,9 +1,13 @@
 // satctl — per-display software saturation for macOS.
 //
 // Applies a synthesized ICC display profile encoding an exact 3x3 saturation
-// matrix to one physical display. The setting is applied by the system colour
-// pipeline, so it covers the entire desktop on that display — apps, video,
-// fullscreen, Mission Control, every Space — and leaves other displays alone.
+// matrix to one physical display. The profile is derived from that display's
+// factory characterization, so it adds saturation on top of the panel's real
+// primaries and tone curve rather than replacing them with sRGB assumptions.
+//
+// The setting is applied by the system colour pipeline, so it covers the entire
+// desktop on that display — apps, video, fullscreen, Mission Control, every
+// Space — and leaves other displays alone.
 //
 // Nothing here is a private API and no permissions are required. The setting
 // persists across logout like any display calibration, so it is applied once
