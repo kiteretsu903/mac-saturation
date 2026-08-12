@@ -1,0 +1,3 @@
+satctl
+*.o
+.DS_Store
