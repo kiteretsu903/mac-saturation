@@ -45,6 +45,17 @@ process, **the app does not need to stay open** — quitting leaves your
 adjustment in place, and there is no daemon, no background CPU or GPU work, and
 no power cost.
 
+**Does it persist across a restart?** Yes, and not because the app restores it.
+The adjustment is stored the same way a Colour Profile choice made in System
+Settings is stored, so macOS re-applies it at login whether or not the app runs.
+Launch at Login is only about having the menu bar slider available, not about
+keeping the setting.
+
+On launch the app reads the saturation **actually installed** on each display
+rather than trusting a saved preference, so the sliders always agree with what
+you are looking at. This matters because `CGDirectDisplayID` is not stable
+across reboots or reconnections, so anything keyed on it can go stale.
+
 **One-click presets.** Displays that are recognised as needing a known amount of
 help get a row of preset buttons above their slider. The **Bigme B251 Pro**
 (EDID name `ICNM 8001H0`) gets 130% / 150% / 200%, with the active one
@@ -76,6 +87,7 @@ build a profile on one Mac and install it by hand on others, or script it.
 
 ```
 satctl list
+satctl status          # what is actually applied to each display
 satctl set 2 0.70      # 1.0 = unchanged, 0.0 = grayscale, >1.0 = oversaturated
 satctl reset 2
 satctl reset all

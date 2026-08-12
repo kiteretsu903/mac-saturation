@@ -22,6 +22,7 @@ func usage() -> Never {
     (for an interactive slider instead, use the Saturation.app menu bar app)
 
       satctl list                    show displays and their index
+      satctl status                  show the saturation actually applied
       satctl set <index> <amount>    apply saturation to one display
       satctl reset <index>           restore the display's normal profile
       satctl reset all               restore every display
@@ -48,6 +49,13 @@ case "list":
     for d in activeDisplays() {
         print("\(d.index)  \(d.name)  [\(d.isBuiltin ? "built-in" : "external")]  "
               + "\(Int(d.size.width))x\(Int(d.size.height))  id=\(d.id)")
+    }
+
+case "status":
+    for d in activeDisplays() {
+        let applied = installedSaturation(displayID: d.id)
+        let shown = applied.map { "\(Int(($0 * 100).rounded()))%" } ?? "normal"
+        print("\(d.index)  \(d.name)  \(shown)")
     }
 
 case "set":

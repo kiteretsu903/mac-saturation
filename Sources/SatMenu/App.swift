@@ -64,10 +64,13 @@ final class SaturationModel: ObservableObject {
 
     func refresh() {
         displays = activeDisplays().map { d in
+            // Read what is really applied, so the UI is correct after a restart
+            // even though display IDs are not stable across reboots.
+            let actual = installedSaturation(displayID: d.id)
             let stored = defaults.object(forKey: key(for: d.id)) as? Double
             return DisplayEntry(
                 id: d.id, index: d.index, name: d.name,
-                isBuiltin: d.isBuiltin, saturation: stored ?? 1.0
+                isBuiltin: d.isBuiltin, saturation: actual ?? stored ?? 1.0
             )
         }
     }

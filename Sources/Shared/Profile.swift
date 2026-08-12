@@ -424,3 +424,57 @@ func applySaturation(_ amount: Double, displayID: CGDirectDisplayID,
     _ = try installProfile(data, displayID: displayID, tag: "\(displayID)")
     return label
 }
+
+// MARK: - Reading back what is actually installed
+
+/// Pulls the human-readable name out of an ICC profile's `desc` tag.
+func profileDescription(_ data: Data) -> String? {
+    let b = [UInt8](data)
+    guard b.count > 132 else { return nil }
+    func u32(_ o: Int) -> Int {
+        (Int(b[o]) << 24) | (Int(b[o+1]) << 16) | (Int(b[o+2]) << 8) | Int(b[o+3])
+    }
+    let count = u32(128)
+    guard count > 0, 132 + count * 12 <= b.count else { return nil }
+
+    for i in 0..<count {
+        let e = 132 + i * 12
+        guard String(bytes: b[e..<(e+4)], encoding: .utf8) == "desc" else { continue }
+        let off = u32(e + 4), size = u32(e + 8)
+        guard off + size <= b.count, size > 28 else { return nil }
+        guard String(bytes: b[off..<(off+4)], encoding: .utf8) == "mluc" else { return nil }
+        let length = u32(off + 20), strOff = u32(off + 24)
+        guard off + strOff + length <= b.count else { return nil }
+        return String(bytes: b[(off + strOff)..<(off + strOff + length)], encoding: .utf16BigEndian)
+    }
+    return nil
+}
+
+/// The saturation currently applied to a display, recovered from the profile
+/// actually assigned to it.
+///
+/// This is the source of truth, not a stored preference: CGDirectDisplayID is
+/// not stable across reboots or reconnections, so anything keyed on it can go
+/// stale and leave the UI disagreeing with the display.
+func installedSaturation(displayID: CGDirectDisplayID) -> Double? {
+    guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue(),
+          let info = ColorSyncDeviceCopyDeviceInfo(
+              kColorSyncDisplayDeviceClass.takeUnretainedValue(), uuid)?
+              .takeRetainedValue() as? [String: Any],
+          let custom = info[kColorSyncCustomProfiles.takeUnretainedValue() as String]
+              as? [String: Any]
+    else { return nil }
+
+    for (_, value) in custom {
+        let url: URL? = (value as? URL) ?? (value as? String).flatMap { URL(string: $0) }
+        guard let u = url, let data = try? Data(contentsOf: u),
+              let name = profileDescription(data),
+              let range = name.range(of: #"Saturation ([0-9.]+)%"#, options: .regularExpression)
+        else { continue }
+        let digits = name[range]
+            .replacingOccurrences(of: "Saturation ", with: "")
+            .replacingOccurrences(of: "%", with: "")
+        if let percent = Double(digits) { return percent / 100.0 }
+    }
+    return nil
+}
