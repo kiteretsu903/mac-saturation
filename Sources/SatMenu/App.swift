@@ -8,6 +8,23 @@
 import SwiftUI
 import AppKit
 import CoreGraphics
+import ServiceManagement
+
+// MARK: - Known panels
+
+/// One-click presets for panels we know need a particular amount of help.
+/// The Bigme B251 Pro reports itself over EDID as "ICNM 8001H0".
+enum KnownPanel {
+    static let bigmePresets: [Double] = [1.3, 1.4, 1.5, 1.6]
+
+    static func presets(for displayName: String) -> [Double]? {
+        let name = displayName.lowercased()
+        if name.contains("icnm 8001h0") || name.contains("bigme") {
+            return bigmePresets
+        }
+        return nil
+    }
+}
 
 // MARK: - Model
 
@@ -23,11 +40,15 @@ struct DisplayEntry: Identifiable, Equatable {
 final class SaturationModel: ObservableObject {
     @Published var displays: [DisplayEntry] = []
     @Published var lastError: String?
+    /// Mirrors the real registration state rather than a stored preference, so
+    /// the toggle stays honest if macOS drops the login item.
+    @Published var launchAtLogin: Bool = false
 
     private let defaults = UserDefaults.standard
 
     init() {
         refresh()
+        refreshLaunchAtLogin()
         // Displays come and go; keep the list and the sliders in step.
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
@@ -64,6 +85,30 @@ final class SaturationModel: ObservableObject {
         }
     }
 
+    // MARK: Launch at login
+
+    func refreshLaunchAtLogin() {
+        launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+        do {
+            if enabled {
+                // Re-registering an already-enabled service throws, so clear first.
+                if SMAppService.mainApp.status == .enabled {
+                    try? SMAppService.mainApp.unregister()
+                }
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+            lastError = nil
+        } catch {
+            lastError = "Could not \(enabled ? "enable" : "disable") launch at login."
+        }
+        refreshLaunchAtLogin()
+    }
+
     func reset(_ entry: DisplayEntry) { apply(1.0, to: entry) }
 
     func resetAll() {
@@ -93,6 +138,21 @@ struct DisplayRow: View {
                     .foregroundStyle(.secondary)
             }
             .font(.system(size: 12, weight: .medium))
+
+            if let presets = KnownPanel.presets(for: entry.name) {
+                HStack(spacing: 4) {
+                    ForEach(presets, id: \.self) { value in
+                        Button("\(Int(value * 100))%") {
+                            entry.saturation = value
+                            model.apply(value, to: entry)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(abs(entry.saturation - value) < 0.001 ? .accentColor : nil)
+                    }
+                }
+                .font(.system(size: 11))
+            }
 
             HStack(spacing: 8) {
                 Slider(
@@ -141,6 +201,14 @@ struct ContentView: View {
 
             Divider()
 
+            Toggle("Launch at Login", isOn: Binding(
+                get: { model.launchAtLogin },
+                set: { model.setLaunchAtLogin($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .font(.system(size: 12))
+
             HStack {
                 Button("Reset All") { model.resetAll() }
                 Spacer()
@@ -162,6 +230,26 @@ struct ContentView: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
+        // Headless check used to verify login-item registration works for this
+        // bundle (ad-hoc signatures are the doubtful case).
+        let args = CommandLine.arguments
+        if args.contains("--login-status") {
+            print("status: \(SMAppService.mainApp.status.rawValue) "
+                  + "(1 = enabled, 0 = notRegistered, 3 = notFound)")
+            exit(0)
+        }
+        if args.contains("--login-enable") {
+            do { try SMAppService.mainApp.register(); print("registered ok") }
+            catch { print("register FAILED: \(error)") }
+            print("status now: \(SMAppService.mainApp.status.rawValue)")
+            exit(0)
+        }
+        if args.contains("--login-disable") {
+            do { try SMAppService.mainApp.unregister(); print("unregistered ok") }
+            catch { print("unregister FAILED: \(error)") }
+            print("status now: \(SMAppService.mainApp.status.rawValue)")
+            exit(0)
+        }
         // Menu bar only — no Dock icon, never takes focus from other apps.
         NSApp.setActivationPolicy(.accessory)
     }

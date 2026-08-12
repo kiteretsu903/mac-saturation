@@ -45,14 +45,27 @@ process, **the app does not need to stay open** — quitting leaves your
 adjustment in place, and there is no daemon, no background CPU or GPU work, and
 no power cost.
 
+**One-click presets.** Displays that are recognised as needing a known amount of
+help get a row of preset buttons above their slider. The **Bigme B251 Pro**
+(EDID name `ICNM 8001H0`) gets 130% / 140% / 150% / 160%, with the active one
+highlighted. Other displays just get the slider. Presets live in `KnownPanel`
+in `Sources/SatMenu/App.swift` if you want to add your own panel.
+
+**Launch at Login.** A toggle in the panel, backed by `SMAppService`. Verified
+working with the ad-hoc signature this repo produces.
+
 Notes:
 
+- The login item records the app's **path**. If you move `Saturation.app` after
+  enabling it, switch the toggle off and on again.
 - The slider commits when you release it, not on every drag frame, since each
   change reinstalls a display profile.
 - It remembers slider positions across launches so the UI matches what is
   applied.
 - It is ad-hoc signed rather than notarized, so the first launch may need
   right-click > Open.
+- For debugging, the binary accepts `--login-status`, `--login-enable` and
+  `--login-disable`, which print the registration state and exit.
 
 ---
 
