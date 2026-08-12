@@ -52,12 +52,34 @@ weights to within ICC quantization), with channel spread ≤ 0.002. Neutrals sta
 exactly neutral at every setting.
 
 Visually confirmed on macOS 27.0 (arm64): external display grayscale, built-in
-display untouched.
+display untouched. Mechanism confirmed identical to BetterDisplay's (above).
 
 - Covers the whole desktop: apps, video, fullscreen, Mission Control, all Spaces.
 - Scoped to one physical display; others are unaffected.
 - No private APIs, no Accessibility or Screen Recording permission, no SIP changes.
 - Persists across logout like any display calibration, so there is no daemon.
+
+## This is what BetterDisplay does
+
+Confirmed by symbol inspection of BetterDisplay 4.3.6 — it imports the same
+call and the same four keys this tool uses:
+
+```
+_ColorSyncDeviceSetCustomProfiles
+_kColorSyncDeviceDefaultProfileID
+_kColorSyncDeviceProfileURL
+_kColorSyncDisplayDeviceClass
+_CGSetDisplayTransferByTable        (its gamma / gain controls)
+_CGDisplayRestoreColorSyncSettings  (its reset path)
+```
+
+Its compositor-filter route is **absent from the binary**: no
+`CGSAddWindowFilter`, `CGSNewCIFilterByName`, `CGSSetCIFilterValues` or
+`CGSSetWindowFiltering`. The only `kCAFilter*` symbols it links are `Linear`
+and `Nearest`, which are content *scaling* filters, not colour ones.
+
+Despite the "compositor filter layer" name in its UI, it does not filter the
+compositor — it replaces the display's ICC profile.
 
 ## What does NOT work on modern macOS
 
