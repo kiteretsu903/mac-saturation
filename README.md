@@ -111,43 +111,61 @@ display: the assigned ICC profile was still the stock one and the gamma table
 was still identity — byte-for-byte identical to the untouched baseline. It
 changes neither.
 
-What it actually does, from its linked frameworks and its on-screen windows:
+It runs a fullscreen overlay window, literally named
+`BetterDisplay Compositor Filter Overlay for Display 3` and sized exactly to the
+display. What that overlay does is **not** settled here. Its binary imports
+ScreenCaptureKit, CoreImage and Metal, and an earlier version of this README
+concluded from that it captures the screen and re-renders it — and therefore
+needs Screen Recording permission.
 
-```
-_OBJC_CLASS_$_SCStream, _SCContentFilter      ScreenCaptureKit
-_OBJC_CLASS_$_CIContext, kCIContextWorkingColorSpace   CoreImage
-_MTLCreateSystemDefaultDevice, _CVPixelBufferGetIOSurface   Metal
-```
+That conclusion was not supported. BetterDisplay has other features (virtual
+display streaming) that would import ScreenCaptureKit anyway, and users report
+that its saturation works without granting Screen Recording.
 
-plus a window literally named
-`BetterDisplay Compositor Filter Overlay for Display 3`, sized exactly to the
-display. It **captures the display, applies a CoreImage filter on the GPU, and
-draws the filtered frames into a fullscreen overlay**. Despite the name, it does
-not filter the compositor — it re-renders the screen on top of itself.
+A permission-free mechanism does exist and is verified here: a `CALayer`
+**compositing** filter on an overlay window, using the private
+`kCAFilterSaturationBlendMode`. Measured on macOS 27 with a fullscreen overlay
+over one display:
 
-### Practical consequences
-
-| | satctl (ICC profile) | BetterDisplay (capture + filter) |
+| overlay | result RGB | mean saturation |
 |---|---|---|
-| Screen Recording permission | not needed | **required** |
-| Running process | none | continuous capture + GPU work |
-| Power cost | zero | ongoing |
-| HDR / wide-gamut content | mapped through the profile | filtered before display mapping |
+| baseline | (198.4, 206.5, 199.9) | 0.0825 |
+| `multiplyBlendMode`, red | (179.6, 46.4, 46.4) | 0.7548 |
+| `saturationBlendMode`, red | (194.1, 217.0, 198.5) | **0.1625** |
+| `saturationBlendMode`, red @ 50% alpha | (195.0, 212.2, 198.5) | 0.1402 |
+| red at 50% alpha, no filter (control) | (212.4, 122.0, 119.0) | 0.4542 |
 
-**The colour maths is not the difference.** Rendering the same colours through
-CoreImage's `CIColorControls` saturation and through this tool's generated
-profile gives near-identical results — differences around 0.01, and luminance
-changes under 0.012, tracking closely even at 200% and 300%. An earlier version
-of this README claimed luminance preservation and gamut clipping explained the
-gap; measurement showed that was wrong.
+The multiply row is the proof that WindowServer really is blending with the
+desktop behind the window rather than compositing an opaque layer over it —
+compare the control. `saturationBlendMode` doubles measured saturation while
+holding luminance, and layer alpha scales the strength.
 
-The two real differences are:
+This is very likely what BetterDisplay's overlay does, but that is inference
+from the mechanism being available and sufficient — not a confirmed reading of
+its code.
+
+### satctl vs an overlay approach
+
+| | satctl (ICC profile) | overlay + compositing filter |
+|---|---|---|
+| Permissions | none | none |
+| Running process | none | one, for as long as the effect is wanted |
+| Survives logout | yes | no, must be relaunched |
+| Private API | none | `CAFilter` blend modes |
+| Screenshots | unaffected (scanout stage) | baked into captures |
+
+**The colour maths is not the difference between the two.** Rendering the same
+colours through CoreImage's `CIColorControls` saturation and through this tool's
+generated profile gives near-identical results — differences around 0.01, and
+luminance changes under 0.012, tracking closely even at 200% and 300%.
+
+The two real differences in appearance are:
 
 - **Tone curve.** Getting the panel's actual gamma right (1.961 here, not 2.2)
   mattered more than the saturation maths.
-- **Slider scale.** BetterDisplay's "130%" is not CoreImage saturation 1.3 — its
-  percentage sits on a different scale, so matching it by eye needs a larger
-  number here. That is why `make` allows up to 400%.
+- **Slider scale.** BetterDisplay's "130%" is not CoreImage saturation 1.3, so
+  matching it by eye needs a larger number here. That is why `make` allows up
+  to 400%.
 
 ## What does NOT work on modern macOS
 
@@ -161,7 +179,9 @@ almost nothing: of **266** candidate filter names tried (every
 was accepted — `CIColorInvert`. `colorSaturate`, `colorMatrix`, `CIColorControls`
 and the rest all return error `1006`.
 
-**`CALayer.backgroundFilters`** with a private `CAFilter`. The `CAFilter` class
+**`CALayer.backgroundFilters`** with a private `CAFilter`. (Note that
+`compositingFilter` *does* work — see above. It is specifically the *backdrop*
+filter path that is dead.) The `CAFilter` class
 and its `colorSaturate` type still exist and instantiate fine, and CoreAnimation
 accepts and stores the filter — but it is a **no-op**. Tested with
 `colorSaturate`, `colorInvert`, `gaussianBlur`, `colorBrightness` and
