@@ -20,7 +20,9 @@ satctl make 145 ~/Desktop/vivid.icc
 `make` generates a standalone `.icc` without touching any display, so you can
 build a profile on one Mac and install it by hand on another.
 
-Ready-made profiles are in [`profiles/`](profiles/) — 130%, 140% and 150%.
+Ready-made profiles are in [`profiles/`](profiles/): a set built from the Bigme
+B251 Pro's own factory characterization (130/140/150/200%) and generic
+sRGB-based ones for other displays.
 To use them without building anything: copy the `.icc` into
 `~/Library/ColorSync/Profiles/`, then pick it in System Settings > Displays >
 Colour Profile.
@@ -28,9 +30,16 @@ Colour Profile.
 | profile | sky-blue spread |
 |---|---|
 | (none / 100%) | 0.398 |
-| Saturation 130% | 0.519 |
-| Saturation 140% | 0.561 |
-| Saturation 150% | 0.605 |
+| Bigme 130% | 0.550 |
+| Bigme 140% | 0.594 |
+| Bigme 150% | 0.639 |
+| Bigme 200% | 0.903 |
+
+`set` and `make --display` derive from the target display's **factory profile**,
+keeping its measured primaries and tone curve and adding saturation on top
+(`M_new = M_display · S⁻¹`). This matters: the Bigme's real tone curve is gamma
+**1.961**, not the 2.2 that earlier versions assumed, and that mismatch shifted
+every midtone.
 
 Build:
 

@@ -253,3 +253,140 @@ func setProfileDescription(_ data: Data, to name: String) -> Data? {
     out.replaceSubrange(0..<4, with: be32(out.count))  // header size field
     return Data(out)
 }
+
+// MARK: - Deriving from the display's own factory profile
+
+/// The parts of a display's ICC profile we need in order to add saturation on
+/// top of it rather than replacing its characterization with a guess.
+struct BaseProfile {
+    var matrix: [Double]      // row-major RGB->XYZ
+    var whitePoint: [Double]  // XYZ
+    var gamma: Double
+}
+
+/// Parses primaries, white point and tone curve out of an ICC profile.
+/// Only the matrix/TRC form is handled — which is what macOS emits for displays.
+func parseBaseProfile(_ data: Data) -> BaseProfile? {
+    let b = [UInt8](data)
+    guard b.count > 132 else { return nil }
+    func u32(_ o: Int) -> Int {
+        (Int(b[o]) << 24) | (Int(b[o+1]) << 16) | (Int(b[o+2]) << 8) | Int(b[o+3])
+    }
+    func s15(_ o: Int) -> Double {
+        Double(Int32(bitPattern: UInt32(u32(o)))) / 65536.0
+    }
+
+    let count = u32(128)
+    guard count > 0, 132 + count * 12 <= b.count else { return nil }
+
+    var xyz: [String: [Double]] = [:]
+    var gamma: Double?
+
+    for i in 0..<count {
+        let e = 132 + i * 12
+        guard let sig = String(bytes: b[e..<(e+4)], encoding: .utf8) else { continue }
+        let off = u32(e + 4), size = u32(e + 8)
+        guard off + size <= b.count, size >= 12 else { continue }
+
+        switch sig {
+        case "rXYZ", "gXYZ", "bXYZ", "wtpt":
+            xyz[sig] = [s15(off + 8), s15(off + 12), s15(off + 16)]
+        case "rTRC":
+            let type = String(bytes: b[off..<(off+4)], encoding: .utf8) ?? ""
+            if type == "para" {
+                // Type 0 is a plain gamma exponent; other types start with it too.
+                gamma = s15(off + 12)
+            } else if type == "curv", u32(off + 8) == 1 {
+                gamma = Double((Int(b[off+12]) << 8) | Int(b[off+13])) / 256.0
+            }
+        default:
+            break
+        }
+    }
+
+    guard let r = xyz["rXYZ"], let g = xyz["gXYZ"],
+          let bl = xyz["bXYZ"], let w = xyz["wtpt"] else { return nil }
+
+    return BaseProfile(
+        matrix: [r[0], g[0], bl[0],
+                 r[1], g[1], bl[1],
+                 r[2], g[2], bl[2]],
+        whitePoint: w,
+        gamma: gamma ?? 2.2
+    )
+}
+
+/// The display's factory profile — the panel's real characterization, taken
+/// before any override this tool installed.
+func factoryBaseProfile(displayID: CGDirectDisplayID) -> BaseProfile? {
+    guard let uuid = CGDisplayCreateUUIDFromDisplayID(displayID)?.takeRetainedValue(),
+          let info = ColorSyncDeviceCopyDeviceInfo(
+              kColorSyncDisplayDeviceClass.takeUnretainedValue(), uuid)?
+              .takeRetainedValue() as? [String: Any],
+          let factory = info[kColorSyncFactoryProfiles.takeUnretainedValue() as String]
+              as? [String: Any]
+    else { return nil }
+
+    // FactoryProfiles is keyed by device mode ("HDMI HD", "HDMI SD"), plus a
+    // DeviceDefaultProfileID entry naming which mode is actually in use. Each
+    // mode maps to a dictionary holding DeviceProfileURL.
+    let urlKey = kColorSyncDeviceProfileURL.takeUnretainedValue() as String
+    let defaultKey = kColorSyncDeviceDefaultProfileID.takeUnretainedValue() as String
+
+    func url(inMode value: Any) -> URL? {
+        guard let entry = value as? [String: Any], let raw = entry[urlKey] else { return nil }
+        if let u = raw as? URL { return u }
+        if let s = raw as? String { return URL(string: s) }
+        return nil
+    }
+
+    // Prefer the mode the display is actually running in.
+    var candidates: [Any] = []
+    if let mode = factory[defaultKey] as? String, let entry = factory[mode] {
+        candidates.append(entry)
+    }
+    candidates.append(contentsOf: factory.filter { $0.key != defaultKey }.map { $0.value })
+
+    for candidate in candidates {
+        guard let u = url(inMode: candidate),
+              // Never derive from a profile this tool installed, or saturation
+              // would compound every time `set` is run.
+              !u.lastPathComponent.hasPrefix("satctl-"),
+              let data = try? Data(contentsOf: u),
+              let base = parseBaseProfile(data)
+        else { continue }
+        return base
+    }
+    return nil
+}
+
+/// Applies saturation on top of an existing display characterization, keeping
+/// its primaries, white point and tone curve intact. `M_new = M_display · S⁻¹`.
+func makeSaturationProfileData(saturation: Double, base: BaseProfile) -> Data? {
+    let s = max(0.001, min(saturation, 4.0))
+    let sInv = inverseSaturationMatrix(s)
+
+    var m = [Double](repeating: 0, count: 9)
+    for row in 0..<3 {
+        for col in 0..<3 {
+            m[row * 3 + col] = (0..<3).reduce(0.0) {
+                $0 + base.matrix[row * 3 + $1] * sInv[$1 * 3 + col]
+            }
+        }
+    }
+    let matrix: [CGFloat] = [
+        CGFloat(m[0]), CGFloat(m[3]), CGFloat(m[6]),
+        CGFloat(m[1]), CGFloat(m[4]), CGFloat(m[7]),
+        CGFloat(m[2]), CGFloat(m[5]), CGFloat(m[8]),
+    ]
+    let wp = base.whitePoint.map { CGFloat($0) }
+    let gammaV = [CGFloat](repeating: CGFloat(base.gamma), count: 3)
+
+    guard let space = CGColorSpace(
+        calibratedRGBWhitePoint: wp,
+        blackPoint: [0, 0, 0],
+        gamma: gammaV,
+        matrix: matrix
+    ) else { return nil }
+    return space.copyICCData() as Data?
+}
