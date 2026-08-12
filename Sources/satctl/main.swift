@@ -18,7 +18,8 @@ import CoreGraphics
 
 func usage() -> Never {
     print("""
-    satctl — per-display software saturation
+    satctl — generate and apply per-display saturation profiles
+    (for an interactive slider instead, use the Saturation.app menu bar app)
 
       satctl list                    show displays and their index
       satctl set <index> <amount>    apply saturation to one display

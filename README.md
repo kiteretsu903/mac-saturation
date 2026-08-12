@@ -1,51 +1,89 @@
-# satctl
+# mac-saturation
 
-Per-display software saturation control for macOS — the one BetterDisplay
-feature, as a small Swift CLI plus a menu bar app, using only public APIs and
-no permissions.
+Per-display software saturation for macOS — the one BetterDisplay feature,
+using only public APIs and requiring no permissions.
 
-Written for a **Bigme B251 Pro** (which identifies itself over EDID as
-`ICNM 8001H0`) to compensate for its limited colour gamut, but nothing here is
-specific to that panel — it works on any display macOS can assign a profile to.
+**This repo contains two separate tools.** They share one mechanism (a
+synthesized ICC display profile, explained under [How it works](#how-it-works))
+but they are meant for different jobs, and neither depends on the other.
 
-### Menu bar app
+| | [Saturation.app](#1-saturationapp--menu-bar-app) | [satctl](#2-satctl--profile-generator-cli) |
+|---|---|---|
+| What it is | menu bar app | command line tool |
+| For | adjusting saturation interactively, any display | generating and exporting `.icc` profiles |
+| How you use it | drag a slider | run a command, or hand the `.icc` to another Mac |
+| Scope | general purpose | general purpose, plus batch/scripted use |
+
+Both were written for a **Bigme B251 Pro** (which identifies itself over EDID as
+`ICNM 8001H0`) to compensate for its limited colour gamut, but nothing in either
+is specific to that panel — they work on any display macOS can assign a profile
+to.
+
+Build both:
+
+```
+./build.sh
+```
+
+---
+
+## 1. Saturation.app — menu bar app
+
+**The general-purpose tool. Use this one if you just want to change saturation.**
 
 ```
 ./build.sh
 open Saturation.app
 ```
 
-A slider per display, listed automatically, with a reset button each and
-"Reset All". It sets the same ICC profiles the CLI does, so **the app does not
-need to keep running** — quitting leaves the adjustment in place. The slider
-commits when you release it rather than on every drag frame, since each change
-reinstalls a display profile.
+Lists every connected display automatically and gives each one a slider
+(0–300%), a reset button, and a "Reset All". Adjustments apply per display and
+leave the others untouched.
 
-Because it is ad-hoc signed rather than notarized, the first launch may need
-right-click > Open.
+Because the setting lives in the display profile rather than in a running
+process, **the app does not need to stay open** — quitting leaves your
+adjustment in place, and there is no daemon, no background CPU or GPU work, and
+no power cost.
 
-### CLI
+Notes:
+
+- The slider commits when you release it, not on every drag frame, since each
+  change reinstalls a display profile.
+- It remembers slider positions across launches so the UI matches what is
+  applied.
+- It is ad-hoc signed rather than notarized, so the first launch may need
+  right-click > Open.
+
+---
+
+## 2. satctl — profile generator CLI
+
+**A separate tool for producing and exporting `.icc` profiles**, so you can
+build a profile on one Mac and install it by hand on others, or script it.
 
 ```
 satctl list
 satctl set 2 0.70      # 1.0 = unchanged, 0.0 = grayscale, >1.0 = oversaturated
 satctl reset 2
 satctl reset all
+```
 
-satctl make 130                    # write Saturation-130.icc (100-400)
+Exporting profiles:
+
+```
+satctl make 130                       # write Saturation-130.icc (100-400)
 satctl make 150 out.icc --display 1   # derive from that display's panel
 satctl make 145 ~/Desktop/vivid.icc
 ```
 
-`make` generates a standalone `.icc` without touching any display, so you can
-build a profile on one Mac and install it by hand on another.
+`make` writes a standalone `.icc` without touching any display. To use an
+exported profile on another machine — no build required there — copy it into
+`~/Library/ColorSync/Profiles/` and pick it in System Settings > Displays >
+Colour Profile.
 
 Ready-made profiles are in [`profiles/`](profiles/): a set built from the Bigme
 B251 Pro's own factory characterization (130/140/150/200%) and generic
 sRGB-based ones for other displays.
-To use them without building anything: copy the `.icc` into
-`~/Library/ColorSync/Profiles/`, then pick it in System Settings > Displays >
-Colour Profile.
 
 | profile | sky-blue spread |
 |---|---|
@@ -59,13 +97,22 @@ Colour Profile.
 keeping its measured primaries and tone curve and adding saturation on top
 (`M_new = M_display · S⁻¹`). This matters: the Bigme's real tone curve is gamma
 **1.961**, not the 2.2 that earlier versions assumed, and that mismatch shifted
-every midtone.
+every midtone. `make` without `--display` has no panel to read and falls back to
+sRGB assumptions.
 
-Build both:
+---
+
+## Layout
 
 ```
-./build.sh
+Sources/Shared/     ICC generation, install/reset, display enumeration
+Sources/SatMenu/    Saturation.app — the menu bar app
+Sources/satctl/     satctl — the CLI
+profiles/           exported, ready-to-install .icc files
+build.sh            builds both
 ```
+
+---
 
 ## How it works
 
