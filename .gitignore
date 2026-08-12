@@ -1,3 +1,5 @@
 /satctl
+/satmenu
+/Saturation.app/
 *.o
 .DS_Store

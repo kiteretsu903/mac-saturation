@@ -1,11 +1,30 @@
 # satctl
 
 Per-display software saturation control for macOS — the one BetterDisplay
-feature, as ~300 lines of Swift, using only public APIs and no permissions.
+feature, as a small Swift CLI plus a menu bar app, using only public APIs and
+no permissions.
 
 Written for a **Bigme B251 Pro** (which identifies itself over EDID as
 `ICNM 8001H0`) to compensate for its limited colour gamut, but nothing here is
 specific to that panel — it works on any display macOS can assign a profile to.
+
+### Menu bar app
+
+```
+./build.sh
+open Saturation.app
+```
+
+A slider per display, listed automatically, with a reset button each and
+"Reset All". It sets the same ICC profiles the CLI does, so **the app does not
+need to keep running** — quitting leaves the adjustment in place. The slider
+commits when you release it rather than on every drag frame, since each change
+reinstalls a display profile.
+
+Because it is ad-hoc signed rather than notarized, the first launch may need
+right-click > Open.
+
+### CLI
 
 ```
 satctl list
@@ -42,10 +61,10 @@ keeping its measured primaries and tone curve and adding saturation on top
 **1.961**, not the 2.2 that earlier versions assumed, and that mismatch shifted
 every midtone.
 
-Build:
+Build both:
 
 ```
-swiftc -O Sources/satctl/*.swift -o satctl
+./build.sh
 ```
 
 ## How it works
