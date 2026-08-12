@@ -15,7 +15,7 @@ import ServiceManagement
 /// One-click presets for panels we know need a particular amount of help.
 /// The Bigme B251 Pro reports itself over EDID as "ICNM 8001H0".
 enum KnownPanel {
-    static let bigmePresets: [Double] = [1.3, 1.4, 1.5, 1.6]
+    static let bigmePresets: [Double] = [1.3, 1.5, 2.0]
 
     static func presets(for displayName: String) -> [Double]? {
         let name = displayName.lowercased()

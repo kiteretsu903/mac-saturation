@@ -47,7 +47,7 @@ no power cost.
 
 **One-click presets.** Displays that are recognised as needing a known amount of
 help get a row of preset buttons above their slider. The **Bigme B251 Pro**
-(EDID name `ICNM 8001H0`) gets 130% / 140% / 150% / 160%, with the active one
+(EDID name `ICNM 8001H0`) gets 130% / 150% / 200%, with the active one
 highlighted. Other displays just get the slider. Presets live in `KnownPanel`
 in `Sources/SatMenu/App.swift` if you want to add your own panel.
 
