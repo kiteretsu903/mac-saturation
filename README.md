@@ -1,7 +1,11 @@
 # satctl
 
 Per-display software saturation control for macOS — the one BetterDisplay
-feature, as ~250 lines of Swift, using only public APIs and no permissions.
+feature, as ~300 lines of Swift, using only public APIs and no permissions.
+
+Written for a **Bigme B251 Pro** (which identifies itself over EDID as
+`ICNM 8001H0`) to compensate for its limited colour gamut, but nothing here is
+specific to that panel — it works on any display macOS can assign a profile to.
 
 ```
 satctl list
@@ -14,9 +18,19 @@ satctl make 145 ~/Desktop/vivid.icc
 ```
 
 `make` generates a standalone `.icc` without touching any display, so you can
-build a profile on one Mac and install it by hand on another (System Settings >
-Displays > Colour Profile). A ready-made 130% profile is in
-[`profiles/`](profiles/).
+build a profile on one Mac and install it by hand on another.
+
+Ready-made profiles are in [`profiles/`](profiles/) — 130%, 140% and 150%.
+To use them without building anything: copy the `.icc` into
+`~/Library/ColorSync/Profiles/`, then pick it in System Settings > Displays >
+Colour Profile.
+
+| profile | sky-blue spread |
+|---|---|
+| (none / 100%) | 0.398 |
+| Saturation 130% | 0.519 |
+| Saturation 140% | 0.561 |
+| Saturation 150% | 0.605 |
 
 Build:
 
