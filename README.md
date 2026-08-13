@@ -308,3 +308,7 @@ than merely being invisible to capture.
   out of gamut and they clip back to the same corner. The visible effect is on
   photographic and mid-range colours. Verified on the Bigme: at 130% a sky blue
   moves from spread 0.398 to 0.550, while pure primaries are unchanged.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
